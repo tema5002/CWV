@@ -1,11 +1,15 @@
 ﻿using System.Collections;
+using System.IO;
 using System.IO.Compression;
+using System.Reflection.PortableExecutable;
 using System.Text;
 using System.Text.RegularExpressions;
+using static CWV.BigEndianStreams;
+using static CWV.Compression;
 
 namespace CWV;
 
-internal class Nbt {
+internal partial class Nbt {
     public enum TAG_ID : byte {
         TAG_End,
         TAG_Byte,
@@ -30,7 +34,7 @@ internal class Nbt {
         string PrettyTree(int indent);
     }
 
-    private static readonly Dictionary<char, string> ESCAPE_DICT = new Dictionary<char, string>() {
+    private static readonly Dictionary<char, string> ESCAPE_DICT = new() {
         {'\\', "\\\\"},
         {'"', "\\\""},
         {'\x00', "\\u0000"},
@@ -66,6 +70,7 @@ internal class Nbt {
         {'\x1e', "\\u001e"},
         {'\x1f', "\\u001f"}
     };
+
     private static readonly Regex ESCAPE = new("[\\x00-\\x1f\\\\\"\\b\\f\\n\\r\\t]");
     private static string AsciiEscape(string s) {
         return '"' + ESCAPE.Replace(s, m => ESCAPE_DICT[m.Value[0]]) + '"';
@@ -91,10 +96,8 @@ internal class Nbt {
         }
     }
 
-    public abstract class TAG_Array<T> : TAG<List<T>>, IList<T> {
+    public abstract class TAG_Array<T>(string name, List<T> value) : TAG<List<T>>(name, value), IList<T> {
         public virtual string? TypeOfT { get; } // i would make it abstract but TAG_Compound/TAG_List does not use it
-
-        public TAG_Array(string name, List<T> value) : base(name, value) { }
 
         public override string ValueString() => "[" + $"{Value.Count} {TypeOfT}" + (Count > 1 ? "s" : "") + "]";
 
@@ -151,29 +154,24 @@ internal class Nbt {
         public TAG_End() : base("", null) { }
     }
 
-    public class TAG_Byte : TAG<byte> {
+    public class TAG_Byte(string name, byte value) : TAG<byte>(name, value) {
         public override TAG_ID Id => TAG_ID.TAG_Byte;
-        public TAG_Byte(string name, byte value) : base(name, value) { }
     }
 
-    public class TAG_Short : TAG<short> {
+    public class TAG_Short(string name, short value) : TAG<short>(name, value) {
         public override TAG_ID Id => TAG_ID.TAG_Short;
-        public TAG_Short(string name, short value) : base(name, value) { }
     }
 
-    public class TAG_Int : TAG<int> {
+    public class TAG_Int(string name, int value) : TAG<int>(name, value) {
         public override TAG_ID Id => TAG_ID.TAG_Int;
-        public TAG_Int(string name, int value) : base(name, value) { }
     }
 
-    public class TAG_Long : TAG<long> {
+    public class TAG_Long(string name, long value) : TAG<long>(name, value) {
         public override TAG_ID Id => TAG_ID.TAG_Long;
-        public TAG_Long(string name, long value) : base(name, value) { }
     }
 
-    public class TAG_Float : TAG<float> {
+    public class TAG_Float(string name, float value) : TAG<float>(name, value) {
         public override TAG_ID Id => TAG_ID.TAG_Float;
-        public TAG_Float(string name, float value) : base(name, value) { }
 
         public override string ValueString() {
             if (float.IsNaN(Value)) return "nan";
@@ -183,9 +181,8 @@ internal class Nbt {
         }
     }
 
-    public class TAG_Double : TAG<double> {
+    public class TAG_Double(string name, double value) : TAG<double>(name, value) {
         public override TAG_ID Id => TAG_ID.TAG_Double;
-        public TAG_Double(string name, double value) : base(name, value) { }
 
         public override string ValueString() {
             if (double.IsNaN(Value)) return "nan";
@@ -195,16 +192,13 @@ internal class Nbt {
         }
     }
 
-    public class TAG_Byte_Array : TAG_Array<sbyte> {
+    public class TAG_Byte_Array(string name, List<sbyte> value) : TAG_Array<sbyte>(name, value) {
         public override TAG_ID Id => TAG_ID.TAG_Byte_Array;
         public override string TypeOfT => "byte";
-
-        public TAG_Byte_Array(string name, List<sbyte> value) : base(name, value) { }
     }
 
-    public class TAG_String : TAG<string> {
+    public class TAG_String(string name, string value) : TAG<string>(name, value) {
         public override TAG_ID Id => TAG_ID.TAG_String;
-        public TAG_String(string name, string value) : base(name, value) { }
 
         public char this[int index] {
             get { return Value[index]; }
@@ -215,14 +209,10 @@ internal class Nbt {
         public bool Contains(string value) => Value.Contains(value);
     }
 
-    public class TAG_List : TAG_Array<ITag> {
+    public class TAG_List(string name, List<Nbt.ITag> value, Nbt.TAG_ID tagsId) : TAG_Array<ITag>(name, value) {
         public override TAG_ID Id => TAG_ID.TAG_List;
-        public TAG_ID tagsId;
+        public TAG_ID tagsId = tagsId;
         public override string TypeOfT => "TAG";
-
-        public TAG_List(string name, List<ITag> value, TAG_ID tagsId) : base(name, value) {
-            this.tagsId = tagsId;
-        }
 
         public override string ValueString() => $"{Value.Count} entries of type {tagsId}";
 
@@ -239,11 +229,9 @@ internal class Nbt {
         }
     }
 
-    public class TAG_Compound : TAG_Array<ITag> {
+    public class TAG_Compound(string name, List<Nbt.ITag> value) : TAG_Array<ITag>(name, value) {
         public override TAG_ID Id => TAG_ID.TAG_Compound;
         public override string TypeOfT => "TAG";
-
-        public TAG_Compound(string name, List<ITag> value) : base(name, value) { }
 
         public override string ToString() {
             return "{" + string.Join(", ", from tag in Value select tag.TagInfo()) + "}";
@@ -298,121 +286,17 @@ internal class Nbt {
         }
     }
 
-    public class TAG_Int_Array : TAG_Array<int> {
+    public class TAG_Int_Array(string name, List<int> value) : TAG_Array<int>(name, value) {
         public override TAG_ID Id => TAG_ID.TAG_Int_Array;
         public override string TypeOfT => "int";
-
-        public TAG_Int_Array(string name, List<int> value) : base(name, value) { }
     }
 
-    public class TAG_Long_Array : TAG_Array<long> {
+    public class TAG_Long_Array(string name, List<long> value) : TAG_Array<long>(name, value) {
         public override TAG_ID Id => TAG_ID.TAG_Long_Array;
         public override string TypeOfT => "long";
-
-        public TAG_Long_Array(string name, List<long> value) : base(name, value) { }
     }
 
-    private class BinaryReader2(Stream stream) : BinaryReader(stream) {
-        public override short ReadInt16() {
-            var data = base.ReadBytes(2);
-            Array.Reverse(data);
-            return BitConverter.ToInt16(data, 0);
-        }
-
-        public override ushort ReadUInt16() {
-            var data = base.ReadBytes(2);
-            Array.Reverse(data);
-            return BitConverter.ToUInt16(data, 0);
-        }
-
-        public override uint ReadUInt32() {
-            var data = base.ReadBytes(4);
-            Array.Reverse(data);
-            return BitConverter.ToUInt32(data, 0);
-        }
-
-        public override int ReadInt32() {
-            var data = base.ReadBytes(4);
-            Array.Reverse(data);
-            return BitConverter.ToInt32(data, 0);
-        }
-
-        public override long ReadInt64() {
-            var data = base.ReadBytes(8);
-            Array.Reverse(data);
-            return BitConverter.ToInt64(data, 0);
-        }
-
-        public override float ReadSingle() {
-            var data = base.ReadBytes(4);
-            Array.Reverse(data);
-            return BitConverter.ToSingle(data, 0);
-        }
-
-        public override double ReadDouble() {
-            var data = base.ReadBytes(8);
-            Array.Reverse(data);
-            return BitConverter.ToDouble(data, 0);
-        }
-    }
-
-    private class BinaryWriter2(Stream stream) : BinaryWriter(stream) {
-        public override void Write(short value) {
-            var data = BitConverter.GetBytes(value);
-            Array.Reverse(data);
-            base.Write(data);
-        }
-
-        public override void Write(ushort value) {
-            var data = BitConverter.GetBytes(value);
-            Array.Reverse(data);
-            base.Write(data);
-        }
-
-        public override void Write(uint value) {
-            var data = BitConverter.GetBytes(value);
-            Array.Reverse(data);
-            base.Write(data);
-        }
-
-        public override void Write(int value) {
-            var data = BitConverter.GetBytes(value);
-            Array.Reverse(data);
-            base.Write(data);
-        }
-
-        public override void Write(long value) {
-            var data = BitConverter.GetBytes(value);
-            Array.Reverse(data);
-            base.Write(data);
-        }
-
-        public override void Write(float value) {
-            var data = BitConverter.GetBytes(value);
-            Array.Reverse(data);
-            base.Write(data);
-        }
-
-        public override void Write(double value) {
-            var data = BitConverter.GetBytes(value);
-            Array.Reverse(data);
-            base.Write(data);
-        }
-
-        public void Write(TAG_ID value) {
-            base.Write((byte)value);
-        }
-    }
-
-    public enum CompressionType {
-        Uncompressed,
-        GZipCompressed,
-        ZLibCompressed
-    }
-
-    public class NBTFile : TAG_Compound {
-        public NBTFile(string name, List<ITag> value) : base(name, value) { }
-
+    public class NBTFile(string name, List<Nbt.ITag> value) : TAG_Compound(name, value) {
         private static string ReadString(BinaryReader2 reader) {
             ushort length = reader.ReadUInt16();
             string s = Encoding.UTF8.GetString(reader.ReadBytes(length));
@@ -475,36 +359,22 @@ internal class Nbt {
         }
 
         private static ITag ReadTag(TAG_ID id, string name, BinaryReader2 reader) {
-            switch (id) {
-                case TAG_ID.TAG_End:
-                    return new TAG_End();
-                case TAG_ID.TAG_Byte:
-                    return new TAG_Byte(name, reader.ReadByte());
-                case TAG_ID.TAG_Short:
-                    return new TAG_Short(name, reader.ReadInt16());
-                case TAG_ID.TAG_Int:
-                    return new TAG_Int(name, reader.ReadInt32());
-                case TAG_ID.TAG_Long:
-                    return new TAG_Long(name, reader.ReadInt64());
-                case TAG_ID.TAG_Float:
-                    return new TAG_Float(name, reader.ReadSingle());
-                case TAG_ID.TAG_Double:
-                    return new TAG_Double(name, reader.ReadDouble());
-                case TAG_ID.TAG_Byte_Array:
-                    return ReadByteArray(name, reader);
-                case TAG_ID.TAG_String:
-                    return new TAG_String(name, ReadString(reader));
-                case TAG_ID.TAG_List:
-                    return ReadList(name, reader);
-                case TAG_ID.TAG_Compound:
-                    return ReadCompound(name, reader);
-                case TAG_ID.TAG_Int_Array:
-                    return ReadIntArray(name, reader);
-                case TAG_ID.TAG_Long_Array:
-                    return ReadLongArray(name, reader);
-                default:
-                    throw new NotSupportedException($"Unknown tag type: {id}");
-            }
+            return id switch {
+                TAG_ID.TAG_End => new TAG_End(),
+                TAG_ID.TAG_Byte => new TAG_Byte(name, reader.ReadByte()),
+                TAG_ID.TAG_Short => new TAG_Short(name, reader.ReadInt16()),
+                TAG_ID.TAG_Int => new TAG_Int(name, reader.ReadInt32()),
+                TAG_ID.TAG_Long => new TAG_Long(name, reader.ReadInt64()),
+                TAG_ID.TAG_Float => new TAG_Float(name, reader.ReadSingle()),
+                TAG_ID.TAG_Double => new TAG_Double(name, reader.ReadDouble()),
+                TAG_ID.TAG_Byte_Array => ReadByteArray(name, reader),
+                TAG_ID.TAG_String => new TAG_String(name, ReadString(reader)),
+                TAG_ID.TAG_List => ReadList(name, reader),
+                TAG_ID.TAG_Compound => ReadCompound(name, reader),
+                TAG_ID.TAG_Int_Array => ReadIntArray(name, reader),
+                TAG_ID.TAG_Long_Array => ReadLongArray(name, reader),
+                _ => throw new NotSupportedException($"Unknown tag type: {id}"),
+            };
         }
 
         private static ITag ReadTagWithPrefix(BinaryReader2 reader) {
@@ -513,37 +383,42 @@ internal class Nbt {
             return ReadTag(id, name, reader);
         }
 
-        public static NBTFile FromStream(Stream stream) {
-            byte[] headerBytes = new byte[3];
-            stream.Read(headerBytes, 0, 3);
-            stream.Seek(0, SeekOrigin.Begin);
+        public static NBTFile FromReaderUncompressed(BinaryReader2 reader) {
+            var tags = ReadTagWithPrefix(reader);
+            if (tags.Id == TAG_ID.TAG_Compound) return new NBTFile(tags.Name, ((TAG_Compound)tags).Value);
+            throw new FormatException("The file is not TAG_Compound.");
+        }
 
-            Stream decompressedStream;
-            if (headerBytes[0] == 0x0A) {
+        public static NBTFile FromBytes(byte[] bytes) {
+            Stream stream = new MemoryStream(bytes);
+            if (bytes[0] == 0x0A) {
                 // no compression
-                decompressedStream = stream;
             }
-            else if (headerBytes[0] == 0x1F && headerBytes[1] == 0x8B) {
+            else if (bytes[0] == 0x1F && bytes[1] == 0x8B) {
                 // GZIP
-                decompressedStream = new GZipStream(stream, CompressionMode.Decompress);
+                stream = new GZipStream(stream, CompressionMode.Decompress);
             }
-            else if (headerBytes[0] == 0x78 && (headerBytes[1] == 0x9C || headerBytes[1] == 0xDA)) {
+            else if (bytes[0] == 0x78 && (bytes[1] == 0x9C || bytes[1] == 0xDA)) {
                 // ZLIB
-                decompressedStream = new ZLibStream(stream, CompressionMode.Decompress);
+                stream = new ZLibStream(stream, CompressionMode.Decompress);
             }
             else {
                 throw new FormatException("Unknown compression type.");
             }
 
-            using (var reader = new BinaryReader2(decompressedStream)) {
-                var tags = ReadTagWithPrefix(reader);
-                if (tags.Id == TAG_ID.TAG_Compound) return new NBTFile(tags.Name, ((TAG_Compound)tags).Value);
-                throw new FormatException("The file is not TAG_Compound.");
-            }
+            return FromReaderUncompressed(new BinaryReader2(stream));
+        }
+
+        public static NBTFile FromStream(Stream stream, int offset, int count) {
+            byte[] buffer = new byte[count];
+            stream.Read(buffer, offset, count);
+            return FromBytes(buffer);
         }
 
         public static NBTFile FromFile(string filePath) {
-            return FromStream(File.OpenRead(filePath));
+            using Stream stream = File.OpenRead(filePath);
+            int fileSize = (int)stream.Length;
+            return FromStream(stream, 0, fileSize);
         }
 
         private static void WriteString(string s, BinaryWriter2 writer) {
@@ -652,9 +527,8 @@ internal class Nbt {
                 stream = new ZLibStream(stream, CompressionMode.Compress);
             }
 
-            using (var writer = new BinaryWriter2(stream)) {
-                WriteTagWithPrefix(this, writer);
-            }
+            using var writer = new BinaryWriter2(stream);
+            WriteTagWithPrefix(this, writer);
         }
 
         public void ToFile(string filePath, CompressionType compression = CompressionType.GZipCompressed) {
