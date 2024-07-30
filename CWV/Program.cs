@@ -9,6 +9,6 @@ internal class Program {
         nbt.ToFile(fp2, compression: Nbt.CompressionType.Uncompressed);
         nbt = Nbt.NBTFile.FromFile(fp2);
         */
-        Region.RegionFile region = Region.RegionFile.FromFile("C:\\Users\\User\\AppData\\Roaming\\.minecraft\\saves1\\New World\\region\\r.-1.-1.mca");
+        Region.RegionFile.FromFile("C:\\Users\\User\\AppData\\Roaming\\.minecraft\\saves1\\New World\\region\\r.-1.-1.mca");
     }
 }

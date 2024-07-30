@@ -1,11 +1,8 @@
 ﻿using System.IO.Compression;
-using System.Reflection.Metadata;
-using System.Runtime.Intrinsics.X86;
 using static CWV.BigEndianStreams;
 using static CWV.Compression;
-using static CWV.Nbt;
 
-namespace CWV; 
+namespace CWV;
 
 internal class Region {
     const int SECTOR_LENGTH = 4096;
@@ -18,7 +15,6 @@ internal class Region {
         Ok = 0,
         NotCreated = 1
     }
-    // срать
     public class ChunkMetadata(byte x, byte z) {
         public byte X { get; } = x;
         public byte Z { get; } = z;
@@ -46,8 +42,8 @@ internal class Region {
         }
     }
 
-    public struct Metadata : IEnumerable<ChunkMetadata> {
-        ChunkMetadata[] metadata = new ChunkMetadata[32 * 32];
+    public readonly struct Metadata : IEnumerable<ChunkMetadata> {
+        readonly ChunkMetadata[] metadata = new ChunkMetadata[32 * 32];
 
         public Metadata() {
             for (byte x = 0; x < 0x20; x++) {
@@ -77,40 +73,6 @@ internal class Region {
             return GetEnumerator();
         }
     }
-    /*
-    class RegionHeader : IEnumerable<ChunkMetadata> {
-        public Dictionary<short, ChunkMetadata> metadata { get; set; } = [];
-
-        public ChunkMetadata this[byte x, byte z] {
-            get { return metadata[(short)(x * 32 + z)]; }
-            set { metadata[(short)(x * 32 + z)] = value; }
-        }
-
-        public int Count => metadata.Count;
-
-        public IEnumerator<ChunkMetadata> GetEnumerator() {
-            return metadata.Values.GetEnumerator();
-        }
-
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
-    }
-
-    class ChunkHeader : IEnumerable<ChunkMetadata> {
-        ChunkMetadata[] metadata { get; set; }
-
-        public ChunkMetadata this[byte x, byte z] {
-            get { return metadata[(short)(x * 32 + z)]; }
-            set { metadata[(short)(x * 32 + z)] = value; }
-        }
-
-        public int Count => metadata.Count;
-
-        public IEnumerator<ChunkMetadata> GetEnumerator() {
-            return metadata.Values.GetEnumerator();
-        }
-
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
-    }*/
 
     public class RegionFile {
         long fileSize = 0;
@@ -149,19 +111,22 @@ internal class Region {
             int length = (int)reader.ReadUInt32();
             Console.WriteLine(length);
             compression = (CompressionType)reader.ReadByte();
-            BinaryReader2 decompressedReader = new BinaryReader2(stream);
+            var decompressedReader = new BinaryReader2(stream);
             if (compression == CompressionType.GZipCompressed) {
-                decompressedReader = new BinaryReader2(new GZipStream(stream, CompressionMode.Decompress));
+                decompressedReader = new(new GZipStream(stream, CompressionMode.Decompress));
             }
             else if (compression == CompressionType.ZLibCompressed) {
-                decompressedReader = new (new ZLibStream(stream, CompressionMode.Decompress));
+                decompressedReader = new(new ZLibStream(stream, CompressionMode.Decompress));
             }
             Console.WriteLine(stream.Length);   // 8197
             Console.WriteLine(stream.Position); // 7962624
-            File.WriteAllText("D:\\chunk.txt", Nbt.NBTFile.FromReaderUncompressed(decompressedReader).PrettyTree());
+            foreach (string key in Nbt.NBTFile.FromReaderUncompressed(decompressedReader).Keys) {
+                Console.WriteLine(key);
+            }
+            //File.WriteAllText("D:\\chunk.txt", Nbt.NBTFile.FromReaderUncompressed(decompressedReader).PrettyTree());
             Console.WriteLine(stream.Length);   // 7962624
             Console.WriteLine(stream.Position); // 16389
-            // obosris
+            decompressedReader.ReadByte(); // он умер от смерти от смерти от смерти и калий который я сьел во вторник в шкиле 🦈
         }
     }
 }

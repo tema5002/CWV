@@ -1,7 +1,5 @@
 ﻿using System.Collections;
-using System.IO;
 using System.IO.Compression;
-using System.Reflection.PortableExecutable;
 using System.Text;
 using System.Text.RegularExpressions;
 using static CWV.BigEndianStreams;
@@ -71,9 +69,12 @@ internal partial class Nbt {
         {'\x1f', "\\u001f"}
     };
 
-    private static readonly Regex ESCAPE = new("[\\x00-\\x1f\\\\\"\\b\\f\\n\\r\\t]");
+
+    [GeneratedRegex("[\\x00-\\x1f\\\\\"\\b\\f\\n\\r\\t]")]
+    private static partial Regex ESCAPE();
+    
     private static string AsciiEscape(string s) {
-        return '"' + ESCAPE.Replace(s, m => ESCAPE_DICT[m.Value[0]]) + '"';
+        return '"' + ESCAPE().Replace(s, m => ESCAPE_DICT[m.Value[0]]) + '"';
     }
 
     public abstract class TAG<T>(string name, T value) : ITag {
