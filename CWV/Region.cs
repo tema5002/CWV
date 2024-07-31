@@ -1,10 +1,7 @@
 ﻿using System.IO.Compression;
-using System.Collections;
 using static CWV.BigEndianStreams;
 using static CWV.Compression;
 using static CWV.Nbt;
-using static System.Runtime.InteropServices.JavaScript.JSType;
-using System.IO;
 
 namespace CWV;
 
