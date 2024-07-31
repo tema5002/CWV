@@ -98,7 +98,7 @@ internal partial class Program {
             }
         }
         try {
-            while (chunks.Count > 0) {
+            while (chunks.Count > 0 || availableChunks.Keys.Count > 0) {
                 Console.WriteLine($"{chunks.Count} chunks left to randomize...");
                 string randomPath = availableChunks.Keys.Choice(); // --->
                 byte[] b = availableChunks[randomPath].PopRandom(); // --->
