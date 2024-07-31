@@ -517,21 +517,11 @@ internal partial class Nbt {
             WriteTag(tag, writer);
         }
 
-
-        public void ToStream(Stream stream, CompressionType compression = CompressionType.GZipCompressed) {
-            if (compression == CompressionType.GZipCompressed) {
-                stream = new GZipStream(stream, CompressionMode.Compress);
-            }
-            if (compression == CompressionType.ZLibCompressed) {
-                stream = new ZLibStream(stream, CompressionMode.Compress);
-            }
-
-            using var writer = new BinaryWriter2(stream);
-            WriteTagWithPrefix(this, writer);
-        }
-
-        public void ToFile(string filePath, CompressionType compression = CompressionType.GZipCompressed) {
-            ToStream(File.Open(filePath, FileMode.Create), compression);
+        public byte[] ToBytes() {
+            using var memoryStream = new MemoryStream();
+            using var gzipStream = new GZipStream(memoryStream, CompressionMode.Compress);
+            WriteTagWithPrefix(this, new BinaryWriter2(gzipStream));
+            return memoryStream.ToArray();
         }
 
         public override string PrettyTree(int indent = 0) {

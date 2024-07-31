@@ -1,8 +1,23 @@
 ﻿using static CWV.Region;
+using static CWV.Nbt;
 using System.Text.RegularExpressions;
-using System;
 
 namespace CWV;
+
+public static class SomeExtensions {
+    private static readonly Random random = new();
+
+    public static T Choice<T>(this IEnumerable<T> enumerable) {
+        return enumerable.ElementAt(random.Next(enumerable.Count()));
+    }
+
+    public static T PopRandom<T>(this List<T> list) {
+        int index = random.Next(list.Count);
+        T t = list[index];
+        list.RemoveAt(index);
+        return t;
+    }
+}
 
 internal partial class Program {
     static string GetPathToSaves() {
@@ -52,7 +67,7 @@ internal partial class Program {
         return regions;
     }
 
-    public static void Main(string[] args) {
+    public static void Main() {
         Console.WriteLine("welcome to see double you vee not working edition");
         Console.WriteLine("i am too lazy to make arguments");
         Console.WriteLine("короче кирилл потом сделай в интерфейсе чтобы были следуйщие параметры");
@@ -60,20 +75,42 @@ internal partial class Program {
         Console.WriteLine(" > возможность выбора своих папок типо чтобы добавляло в нижнем цикле");
         Console.WriteLine(" > разные режимы я в итоге понял как оптимизировать CWV чтобы он суко не жрал 8 гб!!1!!1111");
         Console.WriteLine("сделаю всё сам но ты сделай типо чтобы можно было вот это выбирать");
-        List<Chunk> chunks = [];
+        List<NBTFile> chunks = [];
         Dictionary<string, List<byte[]>> availableChunks = [];
         foreach (string regionPath in GetRegionPaths()) {
             Console.WriteLine($"reading {regionPath}");
             availableChunks[regionPath] = [];
-            var region = RegionFile.FromFile(regionPath);
-            foreach (byte[] xz in region.GetChunksCoords()) {
-                chunks.Add(region[xz[0], xz[1]]); // ураааааааа потребление памяти 3535098 йоттабайт
-                availableChunks[regionPath].Add(xz);
+            RegionFile region;
+            try {
+                region = RegionFile.FromFile(regionPath);
+                foreach (byte[] xz in region.GetChunksCoords()) {
+                    NBTFile? chunk = region[xz[0], xz[1]];
+                    if (chunk != null) {
+                        chunks.Add(chunk); // ураааааааа потребление памяти 3535098 йоттабайт
+                        availableChunks[regionPath].Add(xz);
+                    }
+                }
+
+                if (availableChunks[regionPath].Count == 0) availableChunks.Remove(regionPath);
+            }
+            catch (IOException ex) {
+                Console.Error.WriteLine($"Failed to read file: {ex.Message}");
             }
         }
-        /* не рабочий псевдокод (нужно будет написать эти методы)
-        while (chunks.Count > 0) {
-            print($"{chunks.Count} chunks left to randomize...");
-        }*/
+        try {
+            while (chunks.Count > 0) {
+                Console.WriteLine($"{chunks.Count} chunks left to randomize...");
+                string randomPath = availableChunks.Keys.Choice(); // --->
+                byte[] b = availableChunks[randomPath].PopRandom(); // --->
+
+                RegionFile.ReplaceChunk(randomPath, b[0], b[1], chunks.PopRandom());
+
+                if (availableChunks[randomPath].Count == 0) availableChunks.Remove(randomPath);
+            }
+            Console.WriteLine("если я не тупой то этот кусок говна должен сработать сука!!!!111111");
+        }
+        catch (IOException ex) {
+            Console.Error.WriteLine($"uhhhh sorry but with current realisation this thing just died: {ex.Message}");
+        }
     }
 }

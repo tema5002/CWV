@@ -2,11 +2,11 @@
 
 static internal class BigEndianStreams {
 
-    public class BinaryReader2(Stream stream) : BinaryReader(stream) {
-        public byte[] ReadBytesReversed(int count) {
+    public class BinaryReader2(Stream stream) : BinaryReader(stream, System.Text.Encoding.UTF8, true) {
+        public Span<byte> ReadBytesReversed(int count) {
             var data = base.ReadBytes(count);
             Array.Reverse(data);
-            return data;
+            return new Span<byte>(data);
         }
         public override short ReadInt16() {
             return BitConverter.ToInt16(ReadBytesReversed(2));
@@ -54,6 +54,12 @@ static internal class BigEndianStreams {
             base.Write(data);
         }
 
+        public void WriteUInt24(uint value) {
+            Write((byte)value);
+            Write((byte)(value >> 8));
+            Write((byte)(value >> 16));
+        }
+
         public override void Write(uint value) {
             var data = BitConverter.GetBytes(value);
             Array.Reverse(data);
@@ -85,6 +91,10 @@ static internal class BigEndianStreams {
         }
 
         public void Write(CWV.Nbt.TAG_ID value) {
+            base.Write((byte)value);
+        }
+
+        public void Write(CWV.Compression.CompressionType value) {
             base.Write((byte)value);
         }
     }
