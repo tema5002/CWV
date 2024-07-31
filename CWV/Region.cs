@@ -137,7 +137,6 @@ internal class Region {
             return bytes;
         }
 
-        // utilities and other things to work with class
         public NBTFile? this[byte x, byte z] {
             get => this[x * 32 + z];
             set => this[x * 32 + z] = value;
