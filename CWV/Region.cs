@@ -1,6 +1,9 @@
 ﻿using System.IO.Compression;
+using System.Collections;
 using static CWV.BigEndianStreams;
 using static CWV.Compression;
+using static CWV.Nbt;
+using System.Linq;
 
 namespace CWV;
 
@@ -15,69 +18,39 @@ internal class Region {
         Ok = 0,
         NotCreated = 1
     }
-    public class ChunkMetadata(byte x, byte z) {
+    public class Chunk(byte x, byte z) {
+        public NBTFile? Value { get; set; }
+
+        // metadata
         public byte X { get; } = x;
         public byte Z { get; } = z;
-        public uint BlockStart { get; set; } = 0;
+        public uint Offset { get; set; } = 0;
         public byte SectorCount { get; set; } = 0;
         public uint Timestamp { get; set; } = 0;
         public int Length { get; set; } = 0;
-        public CompressionType compression = CompressionType.Uncompressed;
+        public CompressionType Compression = CompressionType.Uncompressed;
         public ChunkStatus status;
+        public int RequiredBlocks { get => (Length + 4) / SECTOR_LENGTH; }
+        public bool IsCreated { get => Offset != 0; }
 
         public override string ToString() => $"{GetType().Name}({X}, {Z})";
 
-        public string ToStringFull() => $"{GetType().Name}({X}, {Z}, sector={BlockStart}, blocklength={SectorCount}, timestamp={Timestamp}, bytelength={Length}, compression={compression}, status={status})";
-
-        public int RequiredBlocks { get => (Length + 4) / SECTOR_LENGTH; }
-
-        public bool IsCreated { get => BlockStart != 0; }
+        public string ToStringFull() => $"{GetType().Name}({X}, {Z}, sector={Offset}, blocklength={SectorCount}, timestamp={Timestamp}, bytelength={Length}, compression={Compression}, status={status})";
 
         public void UpdateStatus(long fileSize) {
-            if (SectorCount == 0 && BlockStart == 0) status = ChunkStatus.NotCreated;
+            if (SectorCount == 0 && Offset == 0) status = ChunkStatus.NotCreated;
             else if (SectorCount == 0) status = ChunkStatus.ZeroLength;
-            else if (BlockStart < 2 && BlockStart != 0) status = ChunkStatus.InHeader;
-            else if (SECTOR_LENGTH * BlockStart + 5 > fileSize) status = ChunkStatus.OutOfFile;
+            else if (Offset < 2 && Offset != 0) status = ChunkStatus.InHeader;
+            else if (SECTOR_LENGTH * Offset + 5 > fileSize) status = ChunkStatus.OutOfFile;
             else status = ChunkStatus.Ok;
         }
     }
 
-    public readonly struct Metadata : IEnumerable<ChunkMetadata> {
-        readonly ChunkMetadata[] metadata = new ChunkMetadata[32 * 32];
-
-        public Metadata() {
-            for (byte x = 0; x < 0x20; x++) {
-                for (byte z = 0; z < 0x20; z++) {
-                    this[x, z] = new ChunkMetadata(x, z);
-                }
-            }
-        }
-
-        public override readonly string? ToString() => "[" + string.Join(", ", this) + "]";
-
-        public readonly ChunkMetadata this[byte x, byte z] {
-            get { return metadata[x * 32 + z]; }
-            set { metadata[x * 32 + z] = value; }
-        }
-
-        public readonly ChunkMetadata this[int i] {
-            get { return metadata[i]; }
-            set { metadata[i] = value; }
-        }
-
-        public readonly IEnumerator<ChunkMetadata> GetEnumerator() {
-            return ((IEnumerable<ChunkMetadata>)metadata).GetEnumerator();
-        }
-
-        readonly System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() {
-            return GetEnumerator();
-        }
-    }
-
-    public class RegionFile {
+    public class RegionFile : IEnumerable<Chunk> {
         long fileSize = 0;
-        public Metadata metadata = new();
-        CompressionType compression;
+        readonly Chunk[] chunks = new Chunk[32 * 32];
+
+        // reader
         public static RegionFile FromFile(string fp) {
             var region = new RegionFile();
             FileStream stream = File.OpenRead(fp);
@@ -85,48 +58,102 @@ internal class Region {
             region.fileSize = stream.Position;
             stream.Seek(0, SeekOrigin.Begin);
             var reader = new BinaryReader2(stream);
-            //header.metadata = metadata;
+
+            region.InitializeChunks();
             region.ReadHeader(reader);
             region.ReadChunks(stream);
             return region;
+        }
+
+        private void InitializeChunks() {
+            for (byte x = 0; x < 0x20; x++) {
+                for (byte z = 0; z < 0x20; z++) {
+                    this[x, z] = new Chunk(x, z);
+                }
+            }
         }
 
         public void ReadHeader(BinaryReader2 reader) {
             if (fileSize == 0) return;
             if (fileSize < 2 * SECTOR_LENGTH) throw new FormatException("The region file does not have header.");
             for (int i = 0; i < SECTOR_LENGTH / 4; i++) {
-                metadata[i].BlockStart = reader.ReadUInt24();
-                metadata[i].SectorCount = reader.ReadByte();
-                metadata[i].UpdateStatus(fileSize);
+                chunks[i].Offset = reader.ReadUInt24();
+                chunks[i].SectorCount = reader.ReadByte();
+                chunks[i].UpdateStatus(fileSize);
             }
             for (int i = 0; i < SECTOR_LENGTH / 4; i++) {
-                metadata[i].Timestamp = reader.ReadUInt32();
-                Console.WriteLine(metadata[i].ToStringFull());
+                chunks[i].Timestamp = reader.ReadUInt32();
+                Console.WriteLine(chunks[i].ToStringFull());
             }
-            Console.WriteLine(metadata.ToString());
+            Console.WriteLine(chunks.ToString());
+        }
+
+        private static byte[] DecompressChunk(byte[] bytes, CompressionType compression) {
+            if (compression == CompressionType.GZipCompressed) {
+                using var ms = new MemoryStream(bytes);
+                using var gzip = new GZipStream(ms, CompressionMode.Decompress);
+                using var output = new MemoryStream();
+                gzip.CopyTo(output);
+                return output.ToArray();
+            }
+            else if (compression == CompressionType.ZLibCompressed) {
+                using var ms = new MemoryStream(bytes);
+                using var zlib = new ZLibStream(ms, CompressionMode.Decompress);
+                using var output = new MemoryStream();
+                zlib.CopyTo(output);
+                return output.ToArray();
+            }
+            return bytes;
         }
 
         public void ReadChunks(Stream stream) {
             var reader = new BinaryReader2(stream);
-            int length = (int)reader.ReadUInt32();
-            Console.WriteLine(length);
-            compression = (CompressionType)reader.ReadByte();
-            var decompressedReader = new BinaryReader2(stream);
-            if (compression == CompressionType.GZipCompressed) {
-                decompressedReader = new(new GZipStream(stream, CompressionMode.Decompress));
+            for (int i = 0; i < 32 * 32; i++) {
+                stream.Seek(chunks[i].Offset * SECTOR_LENGTH, SeekOrigin.Begin);
+                chunks[i].Length = (int)reader.ReadUInt32();
+                chunks[i].Compression = (CompressionType)reader.ReadByte();
+                
+                if (chunks[i].Offset != 0 && chunks[i].Length != 0) {
+                    chunks[i].Value = NBTFile.FromBytes(DecompressChunk(reader.ReadBytes(chunks[i].Length), chunks[i].Compression));
+                }
             }
-            else if (compression == CompressionType.ZLibCompressed) {
-                decompressedReader = new(new ZLibStream(stream, CompressionMode.Decompress));
+        }
+
+        // utilities and other things to work with class
+        public override string? ToString() => "[" + string.Join(", ", this) + "]";
+
+        public Chunk this[byte x, byte z] {
+            get { return chunks[x * 32 + z]; }
+            set { chunks[x * 32 + z] = value; }
+        }
+
+        public Chunk this[int i] {
+            get { return chunks[i]; }
+            set { chunks[i] = value; }
+        }
+
+        public IEnumerator<Chunk> GetEnumerator() => ((IEnumerable<Chunk>)chunks).GetEnumerator();
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+        public List<byte[]> GetChunksCoords() {
+            List<byte[]> coords = [];
+            for (byte x = 0; x < 0x20; x++) {
+                for (byte z = 0; z < 0x20; z++) {
+                    if (this[x, z].IsCreated) {
+                        coords.Add([x, z]);
+                    }
+                }
             }
-            Console.WriteLine(stream.Length);   // 8197
-            Console.WriteLine(stream.Position); // 7962624
-            foreach (string key in Nbt.NBTFile.FromReaderUncompressed(decompressedReader).Keys) {
-                Console.WriteLine(key);
+            return coords;
+        }
+
+        public List<Chunk> GetChunks() {
+            List<Chunk> chunks = [];
+            foreach (byte[] chunkCoords in GetChunksCoords()) {
+                chunks.Add(this[chunkCoords[0], chunkCoords[1]]);
             }
-            //File.WriteAllText("D:\\chunk.txt", Nbt.NBTFile.FromReaderUncompressed(decompressedReader).PrettyTree());
-            Console.WriteLine(stream.Length);   // 7962624
-            Console.WriteLine(stream.Position); // 16389
-            decompressedReader.ReadByte(); // он умер от смерти от смерти от смерти и калий который я сьел во вторник в шкиле 🦈
+            return chunks;
         }
     }
 }

@@ -73,9 +73,7 @@ internal partial class Nbt {
     [GeneratedRegex("[\\x00-\\x1f\\\\\"\\b\\f\\n\\r\\t]")]
     private static partial Regex ESCAPE();
     
-    private static string AsciiEscape(string s) {
-        return '"' + ESCAPE().Replace(s, m => ESCAPE_DICT[m.Value[0]]) + '"';
-    }
+    private static string AsciiEscape(string s) => '"' + ESCAPE().Replace(s, m => ESCAPE_DICT[m.Value[0]]) + '"';
 
     public abstract class TAG<T>(string name, T value) : ITag {
         public abstract TAG_ID Id { get; }
