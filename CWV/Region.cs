@@ -43,7 +43,6 @@ internal class Region {
         long fileSize = 0;
         readonly Chunk[] chunks = new Chunk[32 * 32];
 
-        // reader
         public static RegionFile FromFile(string fp) {
             var region = new RegionFile();
             using (var stream = File.OpenRead(fp)) {
