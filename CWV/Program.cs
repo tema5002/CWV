@@ -107,7 +107,7 @@ internal partial class Program {
 
                 if (availableChunks[randomPath].Count == 0) availableChunks.Remove(randomPath);
             }
-            Console.WriteLine("если я не тупой то этот кусок говна должен сработать сука!!!!111111");
+            Console.WriteLine("this will either work or dont");
         }
         catch (IOException ex) {
             Console.Error.WriteLine($"uhhhh sorry but with current realisation this thing just died: {ex.Message}");
