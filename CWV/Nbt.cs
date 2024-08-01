@@ -26,130 +26,24 @@ internal partial class Nbt {
     public interface ITag {
         TAG_ID Id { get; }
         string Name { get; set; }
-        string TagInfo();
-        string ValueString();
-        string PrettyTree(int indent);
     }
-
-    private static readonly Dictionary<char, string> ESCAPE_DICT = new() {
-        {'\\', "\\\\"},
-        {'"', "\\\""},
-        {'\x00', "\\u0000"},
-        {'\x01', "\\u0001"},
-        {'\x02', "\\u0002"},
-        {'\x03', "\\u0003"},
-        {'\x04', "\\u0004"},
-        {'\x05', "\\u0005"},
-        {'\x06', "\\u0006"},
-        {'\x07', "\\u0007"},
-        {'\b', "\\b"},
-        {'\t', "\\t"},
-        {'\n', "\\n"},
-        {'\x0b', "\\u000b"},
-        {'\f', "\\f"},
-        {'\r', "\\r"},
-        {'\x0e', "\\u000e"},
-        {'\x0f', "\\u000f"},
-        {'\x10', "\\u0010"},
-        {'\x11', "\\u0011"},
-        {'\x12', "\\u0012"},
-        {'\x13', "\\u0013"},
-        {'\x14', "\\u0014"},
-        {'\x15', "\\u0015"},
-        {'\x16', "\\u0016"},
-        {'\x17', "\\u0017"},
-        {'\x18', "\\u0018"},
-        {'\x19', "\\u0019"},
-        {'\x1a', "\\u001a"},
-        {'\x1b', "\\u001b"},
-        {'\x1c', "\\u001c"},
-        {'\x1d', "\\u001d"},
-        {'\x1e', "\\u001e"},
-        {'\x1f', "\\u001f"}
-    };
-
-
-    [GeneratedRegex("[\\x00-\\x1f\\\\\"\\b\\f\\n\\r\\t]")]
-    private static partial Regex ESCAPE();
-    
-    private static string AsciiEscape(string s) => '"' + ESCAPE().Replace(s, m => ESCAPE_DICT[m.Value[0]]) + '"';
 
     public abstract class TAG<T>(string name, T value) : ITag {
         public abstract TAG_ID Id { get; }
         public string Name { get; set; } = name;
         public T Value { get; set; } = value;
-
-        public string TagInfo() {
-            return GetType().Name + (Name == "" ? "" : $"({AsciiEscape(Name)})") + ": " + ValueString();
-        }
-
-        public virtual string ValueString() {
-            string? value = Value?.ToString();
-            if (Value is string) value = AsciiEscape(value!);
-            return value!;
-        }
-
-        public virtual string PrettyTree(int indent = 0) {
-            return new string('\t', indent) + TagInfo();
-        }
     }
 
-    public abstract class TAG_Array<T>(string name, List<T> value) : TAG<List<T>>(name, value), IList<T> {
-        public virtual string? TypeOfT { get; } // i would make it abstract but TAG_Compound/TAG_List does not use it
-
-        public override string ValueString() => "[" + $"{Value.Count} {TypeOfT}" + (Count > 1 ? "s" : "") + "]";
-
-        public override string ToString() => "[" + string.Join(", ", Value) + "]";
-
-        public void Add(T b) => Value.Add(b);
-
-        public void Clear() => Value.Clear();
-
-        public bool Contains(T b) => Value.Contains(b);
-
-        public void CopyTo(T[] array, int arrayIndex) => CopyTo(array, arrayIndex);
-
+    public abstract class TAG_Array<T>(string name, List<T> value) : TAG<List<T>>(name, value), IEnumerable<T> {
         public int Count { get => Value.Count; }
-
-        public bool Empty { get => Count == 0; }
-
-        public bool IsReadOnly => false;
-
-        public T this[int index] {
-            get { return Value[index]; }
-            set { Value[index] = value; }
-        }
-
-        public bool Remove(T b) => Value.Remove(b);
 
         IEnumerator IEnumerable.GetEnumerator() => Value.GetEnumerator();
 
         public IEnumerator<T> GetEnumerator() => Value.GetEnumerator();
-
-        public int IndexOf(T b) => Value.IndexOf(b);
-
-        public void Insert(int index, T item) => Value.Insert(index, item);
-
-        public void RemoveAt(int index) => Value.RemoveAt(index);
-        /*
-        public override string PrettyTree(int indent = 0) {
-            string output = base.PrettyTree(indent);
-            if (!Empty) {
-                output += "\n" + new string('\t', indent) + "{";
-                foreach (T t in Value) {
-                    output += new string('\t', indent) + "\n" + t?.ToString();
-                }
-                output += "\n" + new string('\t', indent) + "}";
-            }
-            return output;
-        }*/
     }
 
-    public class TAG_End : TAG<object?> {
+    public class TAG_End() : TAG<object?>("", null) {
         public override TAG_ID Id => TAG_ID.TAG_End;
-        // if you will use name or value i will send you to austria
-
-        public TAG_End() : base("", null) { }
     }
 
     public class TAG_Byte(string name, byte value) : TAG<byte>(name, value) {
@@ -170,128 +64,35 @@ internal partial class Nbt {
 
     public class TAG_Float(string name, float value) : TAG<float>(name, value) {
         public override TAG_ID Id => TAG_ID.TAG_Float;
-
-        public override string ValueString() {
-            if (float.IsNaN(Value)) return "nan";
-            if (float.IsInfinity(Value)) return "inf";
-            if (float.IsNegativeInfinity(Value)) return "-inf";
-            return base.ValueString();
-        }
     }
 
     public class TAG_Double(string name, double value) : TAG<double>(name, value) {
         public override TAG_ID Id => TAG_ID.TAG_Double;
-
-        public override string ValueString() {
-            if (double.IsNaN(Value)) return "nan";
-            if (double.IsInfinity(Value)) return "inf";
-            if (double.IsNegativeInfinity(Value)) return "-inf";
-            return base.ValueString();
-        }
     }
 
     public class TAG_Byte_Array(string name, List<sbyte> value) : TAG_Array<sbyte>(name, value) {
         public override TAG_ID Id => TAG_ID.TAG_Byte_Array;
-        public override string TypeOfT => "byte";
     }
 
     public class TAG_String(string name, string value) : TAG<string>(name, value) {
         public override TAG_ID Id => TAG_ID.TAG_String;
-
-        public char this[int index] {
-            get { return Value[index]; }
-        }
-
-        public int Length { get => Value.Length; }
-        public bool Contains(char value) => Value.Contains(value);
-        public bool Contains(string value) => Value.Contains(value);
     }
 
-    public class TAG_List(string name, List<Nbt.ITag> value, Nbt.TAG_ID tagsId) : TAG_Array<ITag>(name, value) {
+    public class TAG_List(string name, List<Nbt.ITag> value, TAG_ID tagsId) : TAG_Array<ITag>(name, value) {
         public override TAG_ID Id => TAG_ID.TAG_List;
         public TAG_ID tagsId = tagsId;
-        public override string TypeOfT => "TAG";
-
-        public override string ValueString() => $"{Value.Count} entries of type {tagsId}";
-
-        public override string PrettyTree(int indent = 0) {
-            string output = base.PrettyTree(indent);
-            if (!Empty) {
-                output += "\n" + new string('\t', indent) + "{";
-                foreach (ITag? tag in Value) {
-                    output += "\n" + tag?.PrettyTree(indent + 1);
-                }
-                output += "\n" + new string('\t', indent) + "}";
-            }
-            return output;
-        }
     }
 
     public class TAG_Compound(string name, List<Nbt.ITag> value) : TAG_Array<ITag>(name, value) {
         public override TAG_ID Id => TAG_ID.TAG_Compound;
-        public override string TypeOfT => "TAG";
-
-        public override string ToString() {
-            return "{" + string.Join(", ", from tag in Value select tag.TagInfo()) + "}";
-        }
-
-        public override string ValueString() => $"{Count} Entr" + (Count > 1 ? "ies" : "y");
-
-        public ITag this[string key] {
-            get {
-                foreach (ITag tag in Value) {
-                    if (tag.Name == key) {
-                        return tag;
-                    }
-                }
-                throw new KeyNotFoundException($"Tag {key} does not exist");
-            }
-            set {
-                value.Name = key;
-                for (int i = 0; i < Count; i++) {
-                    if (this[i].Name == key) {
-                        this[i] = value;
-                        return;
-                    }
-                }
-                Add(value);
-            }
-        }
-
-        public bool ContainsKey(string key) {
-            foreach (ITag tag in Value) {
-                if (tag.Name == key) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        public bool Remove(string key) => Value.Remove(this[key]);
-
-        public IEnumerable<string> Keys => from tag in Value select tag.Name;
-
-        public override string PrettyTree(int indent = 0) {
-            string output = base.PrettyTree(indent);
-            if (!Empty) {
-                output += "\n" + new string('\t', indent) + "{";
-                foreach (ITag? tag in Value) {
-                    output += "\n" + tag?.PrettyTree(indent + 1);
-                }
-                output += "\n" + new string('\t', indent) + "}";
-            }
-            return output;
-        }
     }
 
     public class TAG_Int_Array(string name, List<int> value) : TAG_Array<int>(name, value) {
         public override TAG_ID Id => TAG_ID.TAG_Int_Array;
-        public override string TypeOfT => "int";
     }
 
     public class TAG_Long_Array(string name, List<long> value) : TAG_Array<long>(name, value) {
         public override TAG_ID Id => TAG_ID.TAG_Long_Array;
-        public override string TypeOfT => "long";
     }
 
     public class NBTFile(string name, List<Nbt.ITag> value) : TAG_Compound(name, value) {
@@ -407,18 +208,6 @@ internal partial class Nbt {
             return FromReaderUncompressed(new BinaryReader2(stream));
         }
 
-        public static NBTFile FromStream(Stream stream, int offset, int count) {
-            byte[] buffer = new byte[count];
-            stream.Read(buffer, offset, count);
-            return FromBytes(buffer);
-        }
-
-        public static NBTFile FromFile(string filePath) {
-            using Stream stream = File.OpenRead(filePath);
-            int fileSize = (int)stream.Length;
-            return FromStream(stream, 0, fileSize);
-        }
-
         private static void WriteString(string s, BinaryWriter2 writer) {
             byte[] bytes = Encoding.UTF8.GetBytes(s);
             writer.Write((ushort)bytes.Length);
@@ -509,7 +298,6 @@ internal partial class Nbt {
             }
         }
 
-
         private static void WriteTagWithPrefix(ITag tag, BinaryWriter2 writer) {
             writer.Write(tag.Id);
             WriteString(tag.Name, writer);
@@ -521,10 +309,6 @@ internal partial class Nbt {
             using var gzipStream = new GZipStream(memoryStream, CompressionMode.Compress);
             WriteTagWithPrefix(this, new BinaryWriter2(gzipStream));
             return memoryStream.ToArray();
-        }
-
-        public override string PrettyTree(int indent = 0) {
-            return new TAG_Compound(Name, Value).PrettyTree(indent);
         }
     }
 }
