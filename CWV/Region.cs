@@ -67,7 +67,7 @@ internal class Region {
             if (fileSize == 0) return;
             if (fileSize < 2 * SECTOR_LENGTH) throw new FormatException("The region file does not have header.");
 
-            for (int i = 0; i < 32 * 32; i++) {
+            for (int i = 0; i < SECTOR_LENGTH; i += 4) {
                 stream.Seek(i, SeekOrigin.Begin);
                 chunks[i].Offset = reader.ReadUInt24();
                 chunks[i].SectorCount = reader.ReadByte();
@@ -76,6 +76,7 @@ internal class Region {
                 else if (chunks[i].Offset < 2 && chunks[i].Offset != 0) chunks[i].status = ChunkStatus.InHeader;
                 else if (SECTOR_LENGTH * chunks[i].Offset + 5 > fileSize) chunks[i].status = ChunkStatus.OutOfFile;
                 else chunks[i].status = ChunkStatus.Ok;
+                stream.Seek(i + SECTOR_LENGTH, SeekOrigin.Begin);
                 chunks[i].Timestamp = reader.ReadUInt32();
             }
         }
