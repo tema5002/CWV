@@ -35,16 +35,16 @@ internal partial class Program {
         return from i in Directory.EnumerateFiles(path) select Path.Combine(path, i);
     }
 
+
+
     [GeneratedRegex(@"^(region|DIM-?\d+)$")]
-    private static partial Regex DimFolderRegex();
+    private static partial Regex RegionDirRegex();
 
     static List<string> GetRegionPaths() {
         List<string> regions = [];
         foreach (string world in ListFolders(GetPathToSaves())) {
             Console.WriteLine($"reading {world}");
-            var dimensions = from d in new DirectoryInfo(world).GetDirectories("*", SearchOption.AllDirectories)
-                             where DimFolderRegex().IsMatch(d.Name)
-                             select d.FullName;
+            var dimensions = ListFolders(world).Where(d => RegionDirRegex().IsMatch(d));
             foreach (string dimension in dimensions) {
                 Console.WriteLine($"    reading {dimension}");
                 if (dimension == "region") {
