@@ -100,6 +100,7 @@ internal class Region {
                         try {
                             byte[] data = DecompressChunk(reader.ReadBytes((int)chunks[i].Length), chunks[i].Compression);
                             try {
+                                Console.WriteLine($"replaced chunk {i}");
                                 chunks[i].Value = NBTFile.FromBytes(data);
                             }
                             catch (Exception ex) {
