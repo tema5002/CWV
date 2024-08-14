@@ -75,7 +75,6 @@ internal partial class Program {
         Console.WriteLine(" > возможность выбора своих папок типо чтобы добавляло в нижнем цикле");
         Console.WriteLine(" > разные режимы я в итоге понял как оптимизировать CWV чтобы он суко не жрал 8 гб!!1!!1111");
         Console.WriteLine("сделаю всё сам но ты сделай типо чтобы можно было вот это выбирать");
-        List<NBTFile> chunks = [];
         Dictionary<string, List<byte[]>> availableChunks = [];
         foreach (string regionPath in GetRegionPaths()) {
             Console.WriteLine($"reading {regionPath}");
@@ -86,7 +85,6 @@ internal partial class Program {
                 foreach (byte[] xz in region.GetChunksCoords()) {
                     NBTFile? chunk = region[xz[0], xz[1]];
                     if (chunk != null) {
-                        chunks.Add(chunk); // ураааааааа потребление памяти 3535098 йоттабайт
                         availableChunks[regionPath].Add(xz);
                     }
                 }
@@ -97,16 +95,22 @@ internal partial class Program {
                 Console.Error.WriteLine($"Failed to read file: {ex.Message}");
             }
         }
+
+        string firstPath = availableChunks.Keys.Choice();
+        byte[] firstCoords = availableChunks[firstPath].PopRandom();
+        NBTFile? nbt = RegionFile.GetChunk(firstPath, firstCoords[0], firstCoords[1]);
+
         try {
-            while (chunks.Count > 0 || availableChunks.Keys.Count > 0) {
-                Console.WriteLine($"{chunks.Count} chunks left to randomize...");
+            while (availableChunks.Keys.Count > 0) {
+                Console.WriteLine("possibly useful print statements");
                 string randomPath = availableChunks.Keys.Choice(); // --->
                 byte[] b = availableChunks[randomPath].PopRandom(); // --->
 
-                RegionFile.ReplaceChunk(randomPath, b[0], b[1], chunks.PopRandom());
+                nbt = RegionFile.ReplaceAndPopChunk(randomPath, b[0], b[1], nbt);
 
                 if (availableChunks[randomPath].Count == 0) availableChunks.Remove(randomPath);
             }
+            RegionFile.ReplaceChunk(firstPath, firstCoords[0], firstCoords[1], nbt);
             Console.WriteLine("this will either work or dont");
         }
         catch (IOException ex) {

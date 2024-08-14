@@ -1,4 +1,5 @@
 ﻿using System.IO.Compression;
+using System.Reflection.PortableExecutable;
 using static CWV.BigEndianStreams;
 using static CWV.Compression;
 using static CWV.Nbt;
@@ -43,10 +44,6 @@ internal class Region {
         public static RegionFile FromFile(string fp) {
             var region = new RegionFile();
             using (var stream = File.OpenRead(fp)) {
-                stream.Seek(0, SeekOrigin.End);
-                region.fileSize = stream.Position;
-                stream.Seek(0, SeekOrigin.Begin);
-
                 region.ReadHeader(stream);
                 region.ReadChunks(stream);
             }
@@ -63,6 +60,9 @@ internal class Region {
 
         private void ReadHeader(Stream stream) {
             InitializeChunks();
+            stream.Seek(0, SeekOrigin.End);
+            this.fileSize = stream.Position;
+            stream.Seek(0, SeekOrigin.Begin);
             var reader = new BinaryReader2(stream);
             if (fileSize == 0) return;
             if (fileSize < 2 * SECTOR_LENGTH) throw new FormatException("The region file does not have header.");
@@ -81,41 +81,44 @@ internal class Region {
             }
         }
 
-        private void ReadChunks(Stream stream) {
-            var reader = new BinaryReader2(stream);
-            for (int i = 0; i < 32 * 32; i++) {
-                if (chunks[i].status == ChunkStatus.Ok) {
-                    stream.Seek(chunks[i].Offset * SECTOR_LENGTH, SeekOrigin.Begin);
-                    uint length = reader.ReadUInt32();
+        private void ReadChunk(int i, Stream stream) {
+            using var reader = new BinaryReader2(stream);
+            if (chunks[i].status == ChunkStatus.Ok) {
+                stream.Seek(chunks[i].Offset * SECTOR_LENGTH, SeekOrigin.Begin);
+                uint length = reader.ReadUInt32();
 
-                    if (length > stream.Length - stream.Position || length == 0) {
-                        chunks[i].status = ChunkStatus.MismatchedLengths;
-                        continue;
-                    }
+                if (length > stream.Length - stream.Position || length == 0) {
+                    chunks[i].status = ChunkStatus.MismatchedLengths;
+                    return;
+                }
 
-                    chunks[i].Length = length;
-                    chunks[i].Compression = (CompressionType)reader.ReadByte();
+                chunks[i].Length = length;
+                chunks[i].Compression = (CompressionType)reader.ReadByte();
 
-                    if (chunks[i].Offset != 0 && chunks[i].Length != 0) {
+                if (chunks[i].Offset != 0 && chunks[i].Length != 0) {
+                    try {
+                        byte[] data = DecompressChunk(reader.ReadBytes((int)chunks[i].Length), chunks[i].Compression);
                         try {
-                            byte[] data = DecompressChunk(reader.ReadBytes((int)chunks[i].Length), chunks[i].Compression);
-                            try {
-                                Console.WriteLine($"replaced chunk {i}");
-                                chunks[i].Value = NBTFile.FromBytes(data);
-                            }
-                            catch (Exception ex) {
-                                Console.Error.WriteLine($"NBT Parsing failed for chunk {i}: {ex.Message}");
-                            }
+                            Console.WriteLine($"loaded chunk {i}");
+                            chunks[i].Value = NBTFile.FromBytes(data);
                         }
                         catch (Exception ex) {
-                            Console.Error.WriteLine($"Decompression failed for chunk {i}: {ex.Message}");
-                            chunks[i].status = ChunkStatus.MismatchedLengths;
+                            Console.Error.WriteLine($"NBT Parsing failed for chunk {i}: {ex.Message}");
                         }
+                    }
+                    catch (Exception ex) {
+                        Console.Error.WriteLine($"Decompression failed for chunk {i}: {ex.Message}");
+                        chunks[i].status = ChunkStatus.MismatchedLengths;
                     }
                 }
             }
         }
 
+        private void ReadChunks(Stream stream) {
+            for (int i = 0; i < 32 * 32; i++) {
+                ReadChunk(i, stream);
+            }
+        }
 
         private static byte[] DecompressChunk(byte[] bytes, CompressionType compression) {
             if (compression == CompressionType.GZipCompressed) {
@@ -145,17 +148,28 @@ internal class Region {
             set => chunks[i].Value = value;
         }
 
-        public static void ReplaceChunk(string filePath, byte x, byte z, NBTFile nbt) {
+        public static NBTFile? GetChunk(string filepath, byte x, byte z) {
+            var region = new RegionFile();
+            using (var stream = File.OpenRead(filepath)) {
+                region.ReadHeader(stream);
+                region.ReadChunk(x * 32 + z, stream);
+            }
+            return region[x, z];
+        }
+
+        public static NBTFile? ReplaceAndPopChunk(string filePath, byte x, byte z, NBTFile? nbt) {
             var region = new RegionFile();
             using FileStream stream = File.Open(filePath, FileMode.OpenOrCreate);
 
-            var reader = new BinaryReader2(stream);
-            var writer = new BinaryWriter2(stream);
+            using var reader = new BinaryReader2(stream);
+            using var writer = new BinaryWriter2(stream);
+
             region.ReadHeader(stream);
-
             int chunkIndex = x * 32 + z;
+            region.ReadChunk(chunkIndex, stream);
+            NBTFile? nbtToReturn = region[chunkIndex];
 
-            byte[] nbtBytes = nbt.ToBytes();
+            byte[] nbtBytes = nbt!.ToBytes();
             byte[] data = [
                 (byte)nbtBytes.Length,
                     (byte)(nbtBytes.Length >> 8),
@@ -169,6 +183,44 @@ internal class Region {
             byte newSectorCount = (byte)((data.Length + 4) / SECTOR_LENGTH);
             uint newOffset = region.AllocateSpace(stream, newSectorCount);
             
+            stream.SetLength(Math.Max(stream.Length, newOffset + data.Length));
+            stream.Seek(newOffset, SeekOrigin.Begin);
+            writer.Write(data);
+            writer.Flush();
+
+            stream.Seek(chunkIndex * 4, SeekOrigin.Begin);
+            writer.WriteUInt24(newOffset);
+            writer.Write(newSectorCount);
+            stream.Seek(chunkIndex * 4 + SECTOR_LENGTH, SeekOrigin.Begin);
+            writer.Write((uint)DateTime.UtcNow.Ticks);
+            writer.Flush();
+            return nbtToReturn;
+        }
+
+        public static void ReplaceChunk(string filePath, byte x, byte z, NBTFile? nbt) {
+            var region = new RegionFile();
+            using FileStream stream = File.Open(filePath, FileMode.OpenOrCreate);
+
+            using var reader = new BinaryReader2(stream);
+            using var writer = new BinaryWriter2(stream);
+
+            region.ReadHeader(stream);
+            int chunkIndex = x * 32 + z;
+
+            byte[] nbtBytes = nbt!.ToBytes();
+            byte[] data = [
+                (byte)nbtBytes.Length,
+                    (byte)(nbtBytes.Length >> 8),
+                    (byte)(nbtBytes.Length >> 16),
+                    (byte)CompressionType.GZipCompressed,
+                    .. nbtBytes,
+                ];
+            byte[] paddedData = new byte[(int)Math.Ceiling((float)(data.Length) / SECTOR_LENGTH) * SECTOR_LENGTH];
+            Array.Copy(data, paddedData, data.Length);
+
+            byte newSectorCount = (byte)((data.Length + 4) / SECTOR_LENGTH);
+            uint newOffset = region.AllocateSpace(stream, newSectorCount);
+
             stream.SetLength(Math.Max(stream.Length, newOffset + data.Length));
             stream.Seek(newOffset, SeekOrigin.Begin);
             writer.Write(data);
